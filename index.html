@@ -46,7 +46,7 @@
             border-color: #52525b;
             transition: all 0.2s ease-in-out;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-            text-decoration: none; /* Garante que não tenha sublinhado */
+            text-decoration: none;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -64,6 +64,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            text-decoration: none;
         }
         .link-button-secondary:hover {
             background-color: #4a4a4a;
@@ -76,7 +77,7 @@
 <body>
 
     <video autoplay loop muted playsinline id="background-video">
-        <source src="./assets/animacao-fundo.webm" type="video/webm">
+        <source src="assets/animacao-fundo.webm" type="video/webm">
     </video>
 
     <div class="main-card max-w-xl w-full p-10 shadow-2xl rounded-xl text-center border-4 border-[#3d3d3d] z-10">
@@ -119,12 +120,12 @@
 
         <main class="flex flex-col items-center space-y-4">
 
-            <a href="./sites/animacao.html" 
+            <a href="animacao.html" 
                class="link-button w-64 px-8 py-3 text-xl font-bold rounded-lg shadow-lg border">
                 Alexandre Draw
             </a>
 
-            <a href="./sites/chromakey.html" 
+            <a href="chromakey.html" 
                class="link-button w-64 px-8 py-3 text-lg font-bold rounded-lg shadow-lg border">
                 Alexandre Studio Chroma Key
             </a>
