@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bem-vindo</title>
+    <title>Alexandre Drawn - Bem-vindo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Caveat:wght@700&display=swap" rel="stylesheet">
     <style>
@@ -46,6 +46,10 @@
             border-color: #52525b;
             transition: all 0.2s ease-in-out;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            text-decoration: none; /* Garante que não tenha sublinhado */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .link-button:hover {
             background-color: #4f46e5;
@@ -57,6 +61,9 @@
             color: #a1a1aa;
             border: 1px solid #52525b;
             transition: all 0.2s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .link-button-secondary:hover {
             background-color: #4a4a4a;
@@ -69,7 +76,7 @@
 <body>
 
     <video autoplay loop muted playsinline id="background-video">
-        <source src="assets/animacao-fundo.webm" type="video/webm">
+        <source src="./assets/animacao-fundo.webm" type="video/webm">
     </video>
 
     <div class="main-card max-w-xl w-full p-10 shadow-2xl rounded-xl text-center border-4 border-[#3d3d3d] z-10">
@@ -112,19 +119,18 @@
 
         <main class="flex flex-col items-center space-y-4">
 
-            <!-- Agora apontando para /sites/... -->
-            <a href="sites/animacao.html" 
-               class="link-button inline-block w-64 px-8 py-3 text-xl font-bold rounded-lg shadow-lg border">
+            <a href="./sites/animacao.html" 
+               class="link-button w-64 px-8 py-3 text-xl font-bold rounded-lg shadow-lg border">
                 Alexandre Draw
             </a>
 
-            <a href="sites/chromakey.html" 
-               class="link-button inline-block w-64 px-8 py-3 text-lg font-bold rounded-lg shadow-lg border">
+            <a href="./sites/chromakey.html" 
+               class="link-button w-64 px-8 py-3 text-lg font-bold rounded-lg shadow-lg border">
                 Alexandre Studio Chroma Key
             </a>
 
-            <a href="https://mpago.la/33HZcd1" id="vendas" 
-               class="link-button-secondary inline-block w-64 px-8 py-2 text-lg font-medium rounded-lg">
+            <a href="https://mpago.la/33HZcd1" id="vendas" target="_blank"
+               class="link-button-secondary w-64 px-8 py-2 text-lg font-medium rounded-lg">
                 Doe
             </a>
 
