@@ -354,12 +354,19 @@
                     <div class="flex items-center space-x-1">
                         <input type="range" id="fill-tolerance-slider" min="0" max="100" value="40" class="w-20 h-2 rounded-lg bg-zinc-600 cursor-pointer appearance-none" title="Tolerância do Preenchimento">
                     </div>
-                    <div class="w-px h-6 bg-zinc-600 mx-1"></div>
                     <button id="selection-tool-btn" class="icon-btn p-2 rounded-full text-gray-300 bg-zinc-700" title="Ferramenta de Seleção">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke-dasharray="3 3" d="M12 4.5C16.1421 4.5 19.5 7.85786 19.5 12C19.5 16.1421 16.1421 19.5 12 19.5C7.85786 19.5 4.5 16.1421 4.5 12C4.5 7.85786 7.85786 4.5 12 4.5Z"></path>
                         </svg>
                     </button>
+                    <button id="warp-tool-btn" class="icon-btn p-2 rounded-full text-gray-300 bg-zinc-700" title="Ferramenta Warp (Deformar)">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 8l6 6M8 14l6-6" opacity="0.5"></path>
+                        </svg>
+                    </button>
+
+                    <div class="w-px h-6 bg-zinc-600 mx-1"></div>
                     <button id="onion-skin-btn" class="icon-btn p-2 rounded-full text-gray-300 bg-zinc-700" title="Ativar/Desativar Onion Skinning">
                         <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 13c-3.16 0-6.09-1.39-8.11-3.61C4.78 11.23 7.85 10 12 10s7.22 1.23 8.11 2.39c-2.02 2.22-4.95 3.61-8.11 3.61zm0-10a4.5 4.5 0 100 9 4.5 4.5 0 010-9zm0 7a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"/></svg>
                     </button>
@@ -501,6 +508,7 @@
             const fpsSlider = document.getElementById('fps-slider');
             const fpsValue = document.getElementById('fps-value');
             const selectionToolBtn = document.getElementById('selection-tool-btn');
+            const warpToolBtn = document.getElementById('warp-tool-btn');
             const panToolBtn = document.getElementById('pan-tool-btn');
             const paintBucketBtn = document.getElementById('paint-bucket-btn');
             const eyedropperBtn = document.getElementById('eyedropper-btn');
@@ -608,14 +616,16 @@
             const MAX_HISTORY_STATES = 25;
 
             // Tool State
-            let currentTool = 'brush'; // 'brush', 'eraser', 'selection', 'bucket', 'eyedropper', 'pan'
+            let currentTool = 'brush'; // 'brush', 'eraser', 'selection', 'warp', 'bucket', 'eyedropper', 'pan'
             let isSelecting = false;
             let selectionPath = [];
             let fillTolerance = parseInt(fillToleranceSlider.value);
             
+            let warpGrid = null; 
             let selectionCanvas = null;
             let selectionTransform = { x: 0, y: 0, width: 0, height: 0, rotation: 0 };
             let activeHandle = null;
+            let activeWarpNode = null; // Para saber qual ponto estamos arrastando
             const HANDLE_SIZE = 40; // Alteração: Aumentado em 4x para melhor usabilidade
             let dragStart = { x: 0, y: 0 };
             let initialTransform = {};
@@ -901,13 +911,80 @@
                 updateLayerPanelAndHistoryIndicators();
             }
 
+            // Função matemática para calcular a matriz de transformação de um triângulo
+            function drawTexturedTriangle(ctx, img, x0, y0, x1, y1, x2, y2, u0, v0, u1, v1, u2, v2) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(x0, y0);
+                ctx.lineTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.closePath();
+                ctx.clip();
+
+                const delta = u0 * v1 + v0 * u2 + u1 * v2 - v1 * u2 - v0 * u1 - u0 * v2;
+                const deltaA = x0 * v1 + v0 * x2 + x1 * v2 - v1 * x2 - v0 * x1 - x0 * v2;
+                const deltaB = u0 * x1 + x0 * u2 + u1 * x2 - x1 * u2 - x0 * u1 - u0 * x2;
+                const deltaC = u0 * v1 * x2 + v0 * u1 * x0 + x1 * u2 * v2 - v1 * u2 * x0 - v0 * x1 * v2 - u0 * x1 * v2; // Simplificado
+                const deltaD = y0 * v1 + v0 * y2 + y1 * v2 - v1 * y2 - v0 * y1 - y0 * v2;
+                const deltaE = u0 * y1 + y0 * u2 + u1 * y2 - y1 * u2 - y0 * u1 - u0 * y2;
+                // A matrix calculation fix for canvas affine transform
+                // Solving linear equations for: x = a*u + c*v + e, y = b*u + d*v + f
+                
+                // Cálculo Otimizado da Matriz Inversa
+                const det = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
+                if (det === 0) { ctx.restore(); return; }
+
+                const a = ((x1 - x0) * (v2 - v0) - (x2 - x0) * (v1 - v0)) / det;
+                const b = ((y1 - y0) * (v2 - v0) - (y2 - y0) * (v1 - v0)) / det;
+                const c = ((x2 - x0) * (u1 - u0) - (x1 - x0) * (u2 - u0)) / det;
+                const d = ((y2 - y0) * (u1 - u0) - (y1 - y0) * (u2 - u0)) / det;
+                const e = x0 - a * u0 - c * v0;
+                const f = y0 - b * u0 - d * v0;
+
+                ctx.transform(a, b, c, d, e, f);
+                ctx.drawImage(img, 0, 0);
+                ctx.restore();
+            }
+
+            function renderWarpedSelection(ctx, grid, sourceCanvas) {
+                if (!grid || grid.length < 2) return;
+                
+                const rows = grid.length - 1;
+                const cols = grid[0].length - 1;
+                const cellW = sourceCanvas.width / cols;
+                const cellH = sourceCanvas.height / rows;
+
+                for (let i = 0; i < rows; i++) {
+                    for (let j = 0; j < cols; j++) {
+                        const p1 = grid[i][j];
+                        const p2 = grid[i][j + 1];
+                        const p3 = grid[i + 1][j + 1];
+                        const p4 = grid[i + 1][j];
+
+                        // Coordenadas da textura original (UV)
+                        const u1 = j * cellW, v1 = i * cellH;
+                        const u2 = (j + 1) * cellW, v2 = i * cellH;
+                        const u3 = (j + 1) * cellW, v3 = (i + 1) * cellH;
+                        const u4 = j * cellW, v4 = (i + 1) * cellH;
+
+                        // Triângulo 1: Top-Left, Top-Right, Bottom-Right
+                        drawTexturedTriangle(ctx, sourceCanvas, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, u1, v1, u2, v2, u3, v3);
+                        
+                        // Triângulo 2: Top-Left, Bottom-Right, Bottom-Left
+                        drawTexturedTriangle(ctx, sourceCanvas, p1.x, p1.y, p3.x, p3.y, p4.x, p4.y, u1, v1, u3, v3, u4, v4);
+                    }
+                }
+            }
+
             function renderCanvas(skipLayerIndex = -1) {
+                // Limpa os canvas
                 ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 onionCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
+            
                 const currentFrame = timelineFramesData[currentFrameIndex];
                 if (!currentFrame) return;
-
+            
+                // 1. Desenha Onion Skin (se ativo)
                 if (onionSkinning && currentFrameIndex > 0) {
                     const prevFrame = timelineFramesData[currentFrameIndex - 1];
                     const onionCompositeCanvas = document.createElement('canvas');
@@ -916,20 +993,20 @@
                     const onionCompositeCtx = onionCompositeCanvas.getContext('2d');
                     
                     for (const layer of prevFrame.layers) {
-                            if (layer.visible && !layer.isBackground) {
-                                const tempLayerCanvas = document.createElement('canvas');
-                                tempLayerCanvas.width = CANVAS_WIDTH;
-                                tempLayerCanvas.height = CANVAS_HEIGHT;
-                                const prevFrameData = layer.history[layer.historyIndex];
-                                tempLayerCanvas.getContext('2d').putImageData(prevFrameData, 0, 0);
-                                
-                                onionCompositeCtx.globalAlpha = layer.opacity;
-                                onionCompositeCtx.drawImage(tempLayerCanvas, 0, 0);
-                            }
+                        if (layer.visible && !layer.isBackground) {
+                            const tempLayerCanvas = document.createElement('canvas');
+                            tempLayerCanvas.width = CANVAS_WIDTH;
+                            tempLayerCanvas.height = CANVAS_HEIGHT;
+                            const prevFrameData = layer.history[layer.historyIndex];
+                            tempLayerCanvas.getContext('2d').putImageData(prevFrameData, 0, 0);
+                            onionCompositeCtx.globalAlpha = layer.opacity;
+                            onionCompositeCtx.drawImage(tempLayerCanvas, 0, 0);
+                        }
                     }
                     drawTintedImage(onionCompositeCanvas, onionCtx, `rgba(255, 100, 100, ${onionOpacity})`);
                 }
                 
+                // 2. Desenha as Camadas do Frame Atual
                 const tempRenderCanvas = document.createElement('canvas');
                 tempRenderCanvas.width = CANVAS_WIDTH;
                 tempRenderCanvas.height = CANVAS_HEIGHT;
@@ -937,7 +1014,7 @@
                 
                 for (const [index, layer] of currentFrame.layers.entries()) {
                     if(index === skipLayerIndex) continue;
-
+            
                     if (layer.visible) {
                         const imageDataToDraw = layer.history[layer.historyIndex];
                         if (imageDataToDraw) {
@@ -949,11 +1026,56 @@
                     }
                 }
                 ctx.globalAlpha = 1.0;
-
+            
+                // 3. Lógica de Desenho da Seleção / Warp
                 if (selectionCanvas) {
-                    drawTransformedSelection();
+                    // MODO WARP
+                    if (currentTool === 'warp' && warpGrid) {
+                        // A. Desenha a imagem deformada
+                        renderWarpedSelection(ctx, warpGrid, selectionCanvas);
+            
+                        // B. Desenha a interface da Grade (Linhas e Pontos)
+                        ctx.save();
+                        ctx.lineWidth = 1;
+                        ctx.strokeStyle = '#00FFFF'; // Ciano brilhante
+                        ctx.fillStyle = '#00FFFF';
+            
+                        for (let row = 0; row < warpGrid.length; row++) {
+                            for (let col = 0; col < warpGrid[row].length; col++) {
+                                const point = warpGrid[row][col];
+                                
+                                // Desenha linhas
+                                if (col < warpGrid[row].length - 1) {
+                                    const pNext = warpGrid[row][col + 1];
+                                    ctx.beginPath(); ctx.moveTo(point.x, point.y); ctx.lineTo(pNext.x, pNext.y); ctx.stroke();
+                                }
+                                if (row < warpGrid.length - 1) {
+                                    const pDown = warpGrid[row + 1][col];
+                                    ctx.beginPath(); ctx.moveTo(point.x, point.y); ctx.lineTo(pDown.x, pDown.y); ctx.stroke();
+                                }
+            
+                                // Desenha Pontos (Nós)
+                                ctx.beginPath();
+                                ctx.arc(point.x, point.y, 7, 0, Math.PI * 2); // Raio aumentado para 7
+                                ctx.fill();
+                                
+                                // Destaque no ponto ativo se houver
+                                if(activeWarpNode && activeWarpNode.r === row && activeWarpNode.c === col){
+                                    ctx.fillStyle = '#FF00FF'; // Magenta para ativo
+                                    ctx.fill();
+                                    ctx.fillStyle = '#00FFFF'; // Volta pro Ciano
+                                }
+                            }
+                        }
+                        ctx.restore();
+            
+                    } else {
+                        // MODO SELEÇÃO PADRÃO (Se não for warp, desenha a caixa normal)
+                        drawTransformedSelection();
+                    }
                 }
-
+                
+                // 4. Desenha o caminho da seleção enquanto você está criando ela
                 if (isSelecting && selectionPath.length > 0) {
                     ctx.save();
                     ctx.beginPath();
@@ -1380,31 +1502,39 @@
                 const currentLayers = timelineFramesData[currentFrameIndex].layers;
                 const frame = currentLayers[currentLayerIndex];
                 const targetImageData = frame.history[frame.historyIndex];
-
+            
+                // Prepara o canvas temporário com a imagem que já existe na camada
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = CANVAS_WIDTH;
                 tempCanvas.height = CANVAS_HEIGHT;
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.putImageData(targetImageData, 0, 0);
-
-                const { x, y, width, height, rotation } = selectionTransform;
-                const cx = x + width / 2;
-                const cy = y + height / 2;
-
-                tempCtx.save();
-                tempCtx.translate(cx, cy);
-                tempCtx.rotate(rotation);
-                tempCtx.drawImage(selectionCanvas, -width / 2, -height / 2, width, height);
-                tempCtx.restore();
-
+            
+                // Se tiver grade de warp, usa ela para carimbar
+                if (currentTool === 'warp' && warpGrid) {
+                    renderWarpedSelection(tempCtx, warpGrid, selectionCanvas);
+                    warpGrid = null; 
+                } else {
+                    // Senão usa a transformação padrão
+                    const { x, y, width, height, rotation } = selectionTransform;
+                    const cx = x + width / 2;
+                    const cy = y + height / 2;
+                    tempCtx.save();
+                    tempCtx.translate(cx, cy);
+                    tempCtx.rotate(rotation);
+                    tempCtx.drawImage(selectionCanvas, -width / 2, -height / 2, width, height);
+                    tempCtx.restore();
+                }
+            
+                // Salva o estado no histórico
                 saveHistoryState(tempCtx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT));
-
+                
                 selectionCanvas = null;
+                activeWarpNode = null; // Limpa nó ativo
                 renderCanvas();
                 updateCurrentFrameThumbnail(); 
                 updateLayerPanelAndHistoryIndicators(); // Update layers list and undo/redo buttons
             }
-            
             const stopDrawing = () => {
                 if (isDrawing) {
                     isDrawing = false;
@@ -1520,92 +1650,103 @@
             let activePointerId = null; // Para rastrear qual dedo/caneta está desenhando
 
             const handleDrawStart = (e) => {
-                // Previne comportamento padrão (como rolar a página no toque)
-                if (e.type !== 'mousedown') {
-                    e.preventDefault();
-                }
-
-                // Se já estivermos rastreando um ponteiro, ignore novos
-                if (activePointerId !== null && e.pointerId !== activePointerId) {
-                    return;
-                }
-
+                if (e.type !== 'mousedown') e.preventDefault();
+                // Permite que o mouse funcione mesmo se activePointerId não estiver definido perfeitamente
+                if (activePointerId !== null && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+            
                 const pos = getMousePos(mainCanvas, e);
-
-                // --- Lógica de Ferramentas (igual ao seu código anterior) ---
-                if (currentTool === 'eyedropper') {
-                    const pixelData = ctx.getImageData(pos.x, pos.y, 1, 1).data;
-                    const hex = "#" + ("000000" + rgbToHex(pixelData[0], pixelData[1], pixelData[2])).slice(-6);
-                    currentBrush.color = hex;
-                    colorPicker.value = hex;
-                    colorPickerContainer.style.backgroundColor = hex;
-                    setTool('brush');
+                if(e.pointerId) activePointerId = e.pointerId;
+                if (e.type === 'pointerdown') mainCanvas.setPointerCapture(e.pointerId);
+            
+                // 1. Lógica do WARP (Prioridade Alta)
+                if (currentTool === 'warp' && warpGrid) {
+                    let minDist = 15;
+                    let found = null;
+                    for (let i = 0; i < warpGrid.length; i++) {
+                        for (let j = 0; j < warpGrid[i].length; j++) {
+                            const p = warpGrid[i][j]; // Raio de detecção aumentado para 12
+                            if (Math.hypot(pos.x - p.x, pos.y - p.y) < 12) {
+                                found = { r: i, c: j };
+                            }
+                        }
+                    }
+                    if (found) {
+                        activeWarpNode = found;
+                        renderCanvas();
+                    } else {
+                        stampSelection();
+                        setTool('brush'); 
+                    }
+                    window.addEventListener('pointermove', handleDrawMove);
+                    window.addEventListener('pointerup', handleDrawEnd);
+                    window.addEventListener('mousemove', handleDrawMove); // Garante compatibilidade
+                    window.addEventListener('mouseup', handleDrawEnd);    // Garante compatibilidade
                     return;
                 }
-
+            
+                // ... Eyedropper ...
+                if (currentTool === 'eyedropper') {
+                     const pixelData = ctx.getImageData(pos.x, pos.y, 1, 1).data;
+                     const hex = "#" + ("000000" + rgbToHex(pixelData[0], pixelData[1], pixelData[2])).slice(-6);
+                     currentBrush.color = hex;
+                     colorPicker.value = hex;
+                     colorPickerContainer.style.backgroundColor = hex;
+                     setTool('brush');
+                     return;
+                }
+                
+                // 2. Lógica de Seleção (Transformação) - CORRIGIDA
                 if (currentTool === 'selection' && selectionCanvas) {
                     activeHandle = getHandleAt(pos);
+                    
                     if (activeHandle) {
                         dragStart = pos;
                         initialTransform = JSON.parse(JSON.stringify(selectionTransform));
-                        // Não retorna; precisa adicionar os listeners globais
+                        
+                        // ADICIONA TODOS OS LISTENERS ANTES DE RETORNAR
+                        window.addEventListener('pointermove', handleDrawMove);
+                        window.addEventListener('pointerup', handleDrawEnd);
+                        window.addEventListener('mousemove', handleDrawMove);
+                        window.addEventListener('mouseup', handleDrawEnd);
+                        return; // Sai da função aqui para não iniciar desenho ou nova seleção
                     } else {
+                        // Clicou fora? Carimba e muda ferramenta, ou inicia nova seleção se for longe?
+                        // Aqui assumimos: clicou fora = aplica seleção.
                         stampSelection();
                         setTool('brush');
                         return;
                     }
-                }
-
+                } 
+                
+                // ... Resto das ferramentas ...
                 if (currentTool === 'bucket') {
-                    floodFill(Math.floor(pos.x), Math.floor(pos.y));
-                    return;
-                }
-
-                // --- Lógica de Desenho (Pincel, Borracha) ---
-                // Inicia o estado de "ativo"
+                     floodFill(Math.floor(pos.x), Math.floor(pos.y));
+                     return;
+                } 
+                
                 if (currentTool === 'brush' || currentTool === 'eraser') {
-                    if (timelineFramesData.length === 0 || currentLayerIndex === 0) return;
-                    isDrawing = true;
-                    // Dentro de handleDrawStart, logo após calcular pos:
-                    smoothPointer = { x: pos.x, y: pos.y };
-
-                    [lastX, lastY] = [pos.x, pos.y];
-
-                    // Inicializa o canvas temporário
-                    tempDrawCanvas = document.createElement('canvas');
-                    tempDrawCanvas.width = CANVAS_WIDTH;
-                    tempDrawCanvas.height = CANVAS_HEIGHT;
-                    const tempCtx = tempDrawCanvas.getContext('2d');
-
-                    // Copia o estado atual da camada para o temp canvas
-                    const currentFrameLayers = timelineFramesData[currentFrameIndex].layers;
-                    const currentLayer = currentFrameLayers[currentLayerIndex];
-                    const currentImageData = currentLayer.history[currentLayer.historyIndex];
-                    tempCtx.putImageData(currentImageData, 0, 0);
-
-                    // Configura a operação: Borracha (destination-out) ou Pincel (source-over)
-                    tempCtx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
-                    
-                    // Desenha o primeiro ponto
-                    draw(e, tempCtx); 
-
-                    // --- OTIMIZAÇÃO 4: Renderiza as camadas de baixo APENAS UMA VEZ ---
-                    renderCanvas(currentLayerIndex);
-                    ctx.globalAlpha = currentFrameLayers[currentLayerIndex].opacity;
-                    ctx.drawImage(tempDrawCanvas, 0, 0);
-                    
-                } else if (currentTool === 'selection' && !activeHandle) { // Inicia nova seleção
-                    isSelecting = true;
-                    selectionPath = [pos];
+                     if (timelineFramesData.length === 0 || currentLayerIndex === 0) return;
+                     isDrawing = true;
+                     smoothPointer = { x: pos.x, y: pos.y };
+                     [lastX, lastY] = [pos.x, pos.y];
+                     tempDrawCanvas = document.createElement('canvas');
+                     tempDrawCanvas.width = CANVAS_WIDTH;
+                     tempDrawCanvas.height = CANVAS_HEIGHT;
+                     const tempCtx = tempDrawCanvas.getContext('2d');
+                     const currentFrameLayers = timelineFramesData[currentFrameIndex].layers;
+                     const currentLayer = currentFrameLayers[currentLayerIndex];
+                     const currentImageData = currentLayer.history[currentLayer.historyIndex];
+                     tempCtx.putImageData(currentImageData, 0, 0);
+                     tempCtx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                     draw(e, tempCtx);
+                     renderCanvas(currentLayerIndex);
+                     ctx.globalAlpha = currentFrameLayers[currentLayerIndex].opacity;
+                     ctx.drawImage(tempDrawCanvas, 0, 0);
+                } else if (currentTool === 'selection') {
+                     isSelecting = true;
+                     selectionPath = [pos];
                 }
-
-                // Identifica o ponteiro (para toque/caneta)
-                activePointerId = e.pointerId;
-                if (e.type === 'pointerdown') {
-                    mainCanvas.setPointerCapture(e.pointerId);
-                }
-
-                // Adiciona os listeners de movimento e "soltar" AO DOCUMENTO INTEIRO (window é mais seguro)
+            
                 window.addEventListener('pointermove', handleDrawMove);
                 window.addEventListener('pointerup', handleDrawEnd);
                 window.addEventListener('mousemove', handleDrawMove);
@@ -1625,65 +1766,98 @@
             });
 
             const handleDrawMove = (e) => {
-                // Se não houver um ponteiro ativo (isDrawing, isSelecting, activeHandle), não faz nada
-                if (!isDrawing && !isSelecting && !activeHandle) {
-                    return;
-                }
-
-                // Garante que estamos seguindo o ponteiro correto
-                if (e.pointerId !== undefined && activePointerId !== e.pointerId) {
-                    // Se for um evento de mouse (pressure undefined), deixa passar
-                    if(e.pressure !== undefined){
-                        return;
-                    }
-                }
+                // ... suas verificações iniciais ...
+                if (!isDrawing && !isSelecting && !activeHandle && !activeWarpNode) return;
+                // Verificação de segurança de ponteiro relaxada para permitir mouse
+                if (e.pointerId !== undefined && activePointerId !== null && activePointerId !== e.pointerId && e.pressure === undefined) return;
                 
                 // Esta função agora funciona perfeitamente, mesmo fora do canvas
                 const pos = getMousePos(mainCanvas, e);
-
+            
+                // Movimento do WARP
+                if (activeWarpNode && warpGrid) {
+                    warpGrid[activeWarpNode.r][activeWarpNode.c].x = pos.x;
+                    warpGrid[activeWarpNode.r][activeWarpNode.c].y = pos.y;
+                    renderCanvas();
+                    return;
+                }
+            
+                // Movimento da SELEÇÃO (Mover / Redimensionar / Rotacionar)
                 if (activeHandle) {
-                    // (Lógica de redimensionar seleção)
                     const dx = pos.x - dragStart.x;
                     const dy = pos.y - dragStart.y;
                     const { x, y, width, height, rotation } = initialTransform;
                     const cx = x + width / 2;
                     const cy = y + height / 2;
-
+            
                     if (activeHandle === 'move') {
-                        selectionTransform.x = initialTransform.x + dx;
-                        selectionTransform.y = initialTransform.y + dy;
+                        selectionTransform.x = x + dx;
+                        selectionTransform.y = y + dy;
                     } else if (activeHandle === 'rot') {
                         const startAngle = Math.atan2(dragStart.y - cy, dragStart.x - cx);
                         const currentAngle = Math.atan2(pos.y - cy, pos.x - cx);
                         selectionTransform.rotation = initialTransform.rotation + (currentAngle - startAngle);
                     } else {
+                        // Lógica de Redimensionamento
                         const cos = Math.cos(-rotation);
                         const sin = Math.sin(-rotation);
                         const rotatedDx = dx * cos - dy * sin;
                         const rotatedDy = dx * sin + dy * cos;
-                        
+            
                         let newWidth = width, newHeight = height;
                         let newX = x, newY = y;
-
+            
                         if (activeHandle.includes('r')) newWidth = width + rotatedDx;
-                        if (activeHandle.includes('l')) { newWidth = width - rotatedDx; newX = x + dx; }
-                        if (activeHandle.includes('b')) newHeight = height + rotatedDy;
-                        if (activeHandle.includes('t')) { newHeight = height - rotatedDy; newY = y + dy; }
+                        if (activeHandle.includes('l')) { newWidth = width - rotatedDx; newX = x + rotatedDx; } // Ajuste simples para rotação 0
+                        // Nota: Redimensionamento perfeito com rotação requer matemática de pivô complexa.
+                        // Esta versão simplificada ajusta X/Y baseado no Delta local para não 'pular'.
+                        // Se activeHandle inclui 'l', nós movemos o X. Mas como estamos num sistema rotacionado:
+                        // Uma abordagem mais robusta para L/T é recalcular o centro.
                         
+                        // Correção Simplificada (funciona bem para rotação 0, aceitável para outras):
+                        if (activeHandle.includes('l')) { 
+                             // Recalcula X baseado no delta real projetado no eixo X local
+                             // Se arrastou para a esquerda (dx negativo), largura aumenta e X diminui
+                             // O cálculo exato depende do pivô, vamos manter simples:
+                             // Usamos a lógica do canvas anterior que funcionava:
+                             // Para esquerda/topo, precisamos compensar a posição
+                             // Como o rotatedDx já considera a rotação, podemos aplicar:
+                             const shiftX = dx * Math.cos(rotation) - dy * Math.sin(rotation); // Delta Global X
+                             const shiftY = dx * Math.sin(rotation) + dy * Math.cos(rotation); // Delta Global Y
+                             // Não, vamos usar o método simples que você tinha, mas ATUALIZANDO X/Y:
+                             newWidth = width - rotatedDx;
+                             // O truque: mover o X e Y originais baseado na diferença de tamanho no eixo rotacionado
+                             const rad = rotation;
+                             newX = x + (rotatedDx * Math.cos(rad));
+                             newY = y + (rotatedDx * Math.sin(rad));
+                        }
+            
+                        if (activeHandle.includes('b')) newHeight = height + rotatedDy;
+                        if (activeHandle.includes('t')) { 
+                            newHeight = height - rotatedDy; 
+                            const rad = rotation;
+                            // Move o topo: adiciona o vetor de deslocamento da altura (rotatedDy) rotacionado 90 graus?
+                            // Vetor 'up' é sin/cos. 
+                            newX = (activeHandle.includes('l') ? newX : x) - (rotatedDy * Math.sin(rad));
+                            newY = (activeHandle.includes('l') ? newY : y) + (rotatedDy * Math.cos(rad));
+                        }
+            
                         selectionTransform.width = newWidth;
                         selectionTransform.height = newHeight;
+                        selectionTransform.x = newX; // <--- ESTAS ERAM AS LINHAS QUE FALTAVAM
+                        selectionTransform.y = newY; // <--- PARA SALVAR A NOVA POSIÇÃO
                     }
                     renderCanvas();
                 } else if (isSelecting) {
                     selectionPath.push(pos);
                     renderCanvas(); 
                 } else if (isDrawing) {
-                    // --- OTIMIZAÇÃO 4: Desenha apenas no canvas temporário ---
                     const tempCtx = tempDrawCanvas.getContext('2d');
-                    draw(e, tempCtx); 
-                    // Limpa apenas a área do desenho principal e redesenha o rascunho por cima
+                    draw(e, tempCtx);
+                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    renderCanvas(currentLayerIndex);
                     ctx.globalAlpha = timelineFramesData[currentFrameIndex].layers[currentLayerIndex].opacity;
-                    ctx.drawImage(tempDrawCanvas, 0, 0); // Desenha o rascunho atualizado
+                    ctx.drawImage(tempDrawCanvas, 0, 0);
                 }
             };
 
@@ -1703,6 +1877,7 @@
                     isSelecting = false;
                     finalizeAndCaptureSelection();
                 }
+                activeWarpNode = null;
                 activeHandle = null;
                 activePointerId = null; // Libera o ponteiro
                 
@@ -1802,45 +1977,86 @@
             }
 
             function setTool(tool) {
-                if (currentTool === 'selection' && selectionCanvas) {
+                // Se estivemos na ferramenta de seleção ou warp e mudamos para outra coisa, aplica a alteração (carimba)
+                if ((currentTool === 'selection' || currentTool === 'warp') && tool !== 'selection' && tool !== 'warp' && selectionCanvas) {
                     stampSelection();
                 }
+            
+                // Limpa a grid se sair da ferramenta warp
+                if (tool !== 'warp') {
+                    warpGrid = null;
+                    activeWarpNode = null;
+                    canvasWrapper.style.cursor = 'crosshair';
+                }
                 
+                // Gerencia classes dos botões
                 selectionToolBtn.classList.remove('active');
+                warpToolBtn.classList.remove('active');
                 paintBucketBtn.classList.remove('active');
                 eyedropperBtn.classList.remove('active');                panToolBtn.classList.remove('active');
                 toolSwitch.checked = false;
                 
                 currentTool = tool;
-
+            
                 switch (currentTool) {
+                    case 'warp':
+                        warpToolBtn.classList.add('active');
+                        
+                        // SE tiver uma seleção ativa, cria a grade imediatamente
+                        if (selectionCanvas) {
+                            if (!warpGrid) {
+                                const { x, y, width, height } = selectionTransform;
+                                const rows = 5; // Grade 5x5 para mais pontos
+                                const cols = 5;
+                                warpGrid = [];
+                                for (let i = 0; i <= rows; i++) {
+                                    const row = [];
+                                    for (let j = 0; j <= cols; j++) {
+                                        row.push({
+                                            x: x + (width * (j / cols)),
+                                            y: y + (height * (i / rows))
+                                        });
+                                    }
+                                    warpGrid.push(row);
+                                }
+                            }
+                            canvasWrapper.style.cursor = 'alias'; // Cursor de precisão
+                        } else {
+                            // Se não tiver seleção, avisa e volta para seleção
+                            showMessage('Aviso', 'Selecione uma área primeiro para usar o Warp.');
+                            setTool('selection');
+                            return;
+                        }
+                        break;
+            
                     case 'selection':
                         selectionToolBtn.classList.add('active');
-                        canvasWrapper.style.cursor = 'crosshair';
-                        selectionPath = [];
+                        canvasWrapper.style.cursor = 'move';
                         break;
+                        
                     case 'pan':
                         panToolBtn.classList.add('active');
                         canvasWrapper.style.cursor = 'grab';
                         break;
+                        
                     case 'bucket':
                         paintBucketBtn.classList.add('active');
-                        canvasWrapper.style.cursor = 'crosshair';
                         break;
+                        
                     case 'eyedropper':
                         eyedropperBtn.classList.add('active');
-                        canvasWrapper.style.cursor = 'copy';
                         break;
+                        
                     case 'eraser':
                         toolSwitch.checked = true;
-                        canvasWrapper.style.cursor = 'crosshair';
                         break;
+                        
                     case 'brush':
                     default:
-                        mainCanvas.style.cursor = 'crosshair';
-                        canvasWrapper.style.cursor = 'crosshair';
+                        // cursor padrão
                         break;
                 }
+                renderCanvas(); // Força um redesenho para mostrar a grade
             }
             
             eyedropperBtn.addEventListener('click', () => {
@@ -1864,6 +2080,21 @@
                     setTool('brush');
                 } else {
                     setTool('selection');
+                }
+            });
+
+            warpToolBtn.addEventListener('click', () => {
+                // Só ativa o Warp se já tiver algo selecionado ou se quiser ativar o modo
+                if (currentTool === 'warp') {
+                    setTool('brush');
+                } else {
+                    // Opcional: Se não tiver seleção, avisa o usuário
+                    if (!selectionCanvas && selectionPath.length === 0) {
+                         showMessage('Aviso', 'Faça uma seleção primeiro para usar o Warp.');
+                         setTool('selection'); // Muda para seleção automaticamente
+                         return;
+                    }
+                    setTool('warp');
                 }
             });
 
